@@ -86,6 +86,7 @@ hik-adapter/
     superpowers/plans/
       2026-08-17-hik-connect-vtm-feasibility.md
   src/
+    lib.rs
     main.rs
     config.rs
     error.rs
