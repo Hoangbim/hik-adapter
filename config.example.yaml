@@ -13,5 +13,5 @@ recording:
   camera_serials: []
 
 server:
-  bind: "127.0.0.1:8787"
+  bind: "0.0.0.0:8787"
   public_base_url: null

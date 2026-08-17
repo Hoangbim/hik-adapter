@@ -11,6 +11,10 @@ by the feasibility design.
 | Keepalive and media iteration | `VtmStreamClient.iter_packets` |
 | VTM REST bootstrap | `hikcloudstream.stream.session.build_cloud_stream_info` |
 | VTDU token fallback | `hikcloudstream.stream.tokens.get_vtdu_tokens` |
+| `vtm::build_stream_info_request` | `pyezvizapi.stream.build_stream_info_request` |
+| `vtm::parse_stream_info_response` | `pyezvizapi.stream.parse_stream_info_response` |
+| `vtm::TransportLock::accept` | `pyezvizapi.stream.VtmStreamClient.iter_media` |
+| `api::build_vtm_url` | `pyezvizapi.stream.build_vtm_url` |
 
 Constants: magic `0x24`; message channel `0x00`; stream channel `0x01`;
 encrypted channels `0x0a`/`0x0b`; keepalive `0x132`/`0x133`; stream-info

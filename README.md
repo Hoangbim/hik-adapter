@@ -28,9 +28,15 @@ cargo run --release -- list --config config.yaml
 cargo run --release -- run --config config.yaml
 ```
 
-The HTTP server binds to `127.0.0.1:8787` by default. Binding to
-`0.0.0.0:8787` is intended only for a trusted LAN/VPN or an authenticated
+The example binds `server.bind: 0.0.0.0:8787`; open `http://HOST:8787/` from
+another machine. Expose it only on a trusted LAN/VPN or behind an authenticated
 reverse proxy. Public authentication and TLS are outside this feasibility phase.
 
 The output remains HEVC. Browser playback depends on platform HEVC support;
 VLC and other HEVC-capable clients can use the same Range endpoint.
+
+Each selected camera gets one named OS thread. A camera failure does not stop
+the other recordings, so partial success is expected during feasibility runs.
+Completed files are mode `0600` inside a mode `0700` output directory. Remove
+the `recordings/` directory when the feasibility evidence is no longer needed;
+use `run --overwrite` only when intentionally replacing prior outputs.
