@@ -1,4 +1,4 @@
-use crate::error::{AdapterError, ErrorCategory};
+use crate::error::AdapterError;
 
 #[derive(Default)]
 pub struct TransportLock {
@@ -6,16 +6,18 @@ pub struct TransportLock {
 }
 
 impl TransportLock {
-    pub fn accept(&mut self, body: &[u8]) -> Result<(), AdapterError> {
-        if !self.locked {
-            if !body.starts_with(&[0x00, 0x00, 0x01, 0xba]) {
-                return Err(AdapterError::new(
-                    ErrorCategory::UnsupportedTransport,
-                    "first media packet is not MPEG-PS",
-                ));
-            }
-            self.locked = true;
+    pub fn accept<'a>(&mut self, body: &'a [u8]) -> Result<Option<&'a [u8]>, AdapterError> {
+        if self.locked {
+            return Ok(Some(body));
         }
-        Ok(())
+        let marker = [0x00, 0x00, 0x01, 0xba];
+        let Some(offset) = body
+            .windows(marker.len())
+            .position(|window| window == marker)
+        else {
+            return Ok(None);
+        };
+        self.locked = true;
+        Ok(Some(&body[offset..]))
     }
 }

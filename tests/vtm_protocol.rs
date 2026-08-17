@@ -1,9 +1,6 @@
-use hik_adapter::{
-    error::ErrorCategory,
-    vtm::{
-        Channel, MessageCode, TransportLock, VtmPacket, build_stream_info_request, decode_header,
-        parse_stream_info_response,
-    },
+use hik_adapter::vtm::{
+    Channel, MessageCode, TransportLock, VtmPacket, build_stream_info_request, decode_header,
+    parse_stream_info_response,
 };
 use secrecy::{ExposeSecret, SecretString};
 
@@ -87,8 +84,13 @@ fn builds_minimal_stream_info_request() {
 #[test]
 fn transport_locks_once_to_mpeg_ps() {
     let mut lock = TransportLock::default();
-    let error = lock.accept(b"fragment").unwrap_err();
-    assert_eq!(error.category, ErrorCategory::UnsupportedTransport);
-    lock.accept(&[0, 0, 1, 0xba, 1, 2]).unwrap();
-    lock.accept(b"later-fragment").unwrap();
+    assert_eq!(lock.accept(b"fragment").unwrap(), None);
+    assert_eq!(
+        lock.accept(&[9, 8, 0, 0, 1, 0xba, 1, 2]).unwrap(),
+        Some(&[0, 0, 1, 0xba, 1, 2][..])
+    );
+    assert_eq!(
+        lock.accept(b"later-fragment").unwrap(),
+        Some(&b"later-fragment"[..])
+    );
 }

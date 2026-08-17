@@ -64,11 +64,23 @@ impl FfmpegRecorder {
     }
 
     pub fn write_media(&mut self, body: &[u8]) -> Result<(), AdapterError> {
-        self.stdin
+        let result = self
+            .stdin
             .as_mut()
             .ok_or_else(|| ffmpeg_error("FFmpeg input is closed"))?
-            .write_all(body)
-            .map_err(|_| ffmpeg_error("FFmpeg rejected MPEG-PS input"))
+            .write_all(body);
+        if result.is_ok() {
+            return Ok(());
+        }
+        self.stdin.take();
+        let _ = self.child.wait();
+        let stderr = self.take_stderr();
+        let detail = sanitized_stderr(&stderr);
+        Err(ffmpeg_error(if detail.is_empty() {
+            "FFmpeg rejected MPEG-PS input".to_owned()
+        } else {
+            format!("FFmpeg rejected MPEG-PS input: {detail}")
+        }))
     }
 
     pub fn finish(mut self, timeout: Duration) -> Result<PathBuf, AdapterError> {
@@ -89,17 +101,9 @@ impl FfmpegRecorder {
             }
             thread::sleep(Duration::from_millis(25));
         };
-        let stderr = self
-            .stderr_reader
-            .take()
-            .and_then(|handle| handle.join().ok())
-            .unwrap_or_default();
+        let stderr = self.take_stderr();
         if !status.success() {
-            let detail = String::from_utf8_lossy(&stderr)
-                .replace(['\r', '\n'], " ")
-                .chars()
-                .take(500)
-                .collect::<String>();
+            let detail = sanitized_stderr(&stderr);
             return Err(ffmpeg_error(if detail.is_empty() {
                 "FFmpeg exited unsuccessfully".to_owned()
             } else {
@@ -107,6 +111,13 @@ impl FfmpegRecorder {
             }));
         }
         Ok(self.part_path.clone())
+    }
+
+    fn take_stderr(&mut self) -> Vec<u8> {
+        self.stderr_reader
+            .take()
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_default()
     }
 }
 
@@ -175,6 +186,14 @@ fn part_path_for(final_path: &Path) -> Result<PathBuf, AdapterError> {
 
 fn ffmpeg_error(message: impl Into<String>) -> AdapterError {
     AdapterError::new(ErrorCategory::FfmpegFailed, message)
+}
+
+fn sanitized_stderr(stderr: &[u8]) -> String {
+    String::from_utf8_lossy(stderr)
+        .replace(['\r', '\n'], " ")
+        .chars()
+        .take(500)
+        .collect()
 }
 
 #[cfg(test)]

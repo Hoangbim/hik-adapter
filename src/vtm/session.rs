@@ -129,6 +129,8 @@ impl VtmSession {
         let mut last_keepalive = Instant::now();
         let mut stats = MediaStats::default();
         let mut transport = TransportLock::default();
+        let mut unsynchronized_packets = 0_u64;
+        let mut unsynchronized_bytes = 0_u64;
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 return Err(session_error(
@@ -142,10 +144,15 @@ impl VtmSession {
                     return Ok(stats);
                 }
             } else if waiting_since.elapsed() >= no_media_timeout {
-                return Err(session_error(
-                    ErrorCategory::NoMedia,
-                    "VTM relay returned no media",
-                ));
+                let reason = if unsynchronized_packets == 0 {
+                    "VTM relay returned no stream packets".to_owned()
+                } else {
+                    format!(
+                        "VTM relay returned {unsynchronized_packets} stream packets / \
+                         {unsynchronized_bytes} bytes without an MPEG-PS pack header"
+                    )
+                };
+                return Err(session_error(ErrorCategory::NoMedia, reason));
             }
             if last_keepalive.elapsed() >= Duration::from_secs(5) {
                 if let Some(stream_session) = self.stream_session.clone() {
@@ -170,11 +177,15 @@ impl VtmSession {
                     ));
                 }
                 Channel::Stream => {
-                    transport.accept(&packet.body)?;
+                    let Some(media) = transport.accept(&packet.body)? else {
+                        unsynchronized_packets += 1;
+                        unsynchronized_bytes += packet.body.len() as u64;
+                        continue;
+                    };
                     let started = media_since.get_or_insert_with(Instant::now);
-                    sink(&packet.body)?;
+                    sink(media)?;
                     stats.packets += 1;
-                    stats.bytes += packet.body.len() as u64;
+                    stats.bytes += media.len() as u64;
                     stats.elapsed = started.elapsed();
                 }
                 Channel::Message if packet.header.code == MessageCode::KeepAliveReq => {

@@ -5,7 +5,7 @@ hik_connect:
   request_timeout_seconds: 20
 
 recording:
-  max_cameras: 10
+  max_cameras: 41
   duration_seconds: 30
   output_dir: "recordings"
   ffmpeg_path: "ffmpeg"

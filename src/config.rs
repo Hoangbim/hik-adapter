@@ -97,10 +97,10 @@ impl AppConfig {
     }
 
     pub fn validate(&self) -> Result<(), AdapterError> {
-        if !(1..=10).contains(&self.recording.max_cameras) {
+        if !(1..=41).contains(&self.recording.max_cameras) {
             return Err(AdapterError::new(
                 ErrorCategory::ConfigurationInvalid,
-                "max_cameras must be 1..=10",
+                "max_cameras must be 1..=41",
             ));
         }
         if self.recording.duration_seconds == 0 {
@@ -142,7 +142,7 @@ impl Default for HikConnectConfig {
 impl Default for RecordingConfig {
     fn default() -> Self {
         Self {
-            max_cameras: 10,
+            max_cameras: 41,
             duration_seconds: 30,
             output_dir: PathBuf::from("recordings"),
             ffmpeg_path: PathBuf::from("ffmpeg"),
@@ -172,9 +172,9 @@ mod tests {
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     #[test]
-    fn rejects_more_than_ten_cameras() {
+    fn rejects_more_than_forty_one_cameras() {
         let mut config = AppConfig::default();
-        config.recording.max_cameras = 11;
+        config.recording.max_cameras = 42;
         let error = config.validate().unwrap_err();
         assert_eq!(error.category, ErrorCategory::ConfigurationInvalid);
     }
