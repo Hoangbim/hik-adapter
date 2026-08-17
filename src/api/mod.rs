@@ -1,5 +1,8 @@
 mod auth;
 mod cameras;
+mod vtm;
+
+pub use vtm::{VtmContext, build_vtm_url};
 
 use std::{fmt, time::Duration};
 
