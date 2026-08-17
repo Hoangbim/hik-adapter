@@ -1,0 +1,10 @@
+{
+  "streams": [{
+    "codec_name": "hevc",
+    "codec_type": "video",
+    "width": 1280,
+    "height": 720,
+    "r_frame_rate": "20/1"
+  }],
+  "format": {"duration": "30.042000", "size": "641520"}
+}
