@@ -1,0 +1,35 @@
+[package]
+name = "hik-adapter"
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+ctrlc = "3"
+http = "1"
+httpdate = "1"
+md-5 = "0.10"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+secrecy = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2"
+
+[dev-dependencies]
+assert_cmd = "2"
+httpmock = "0.7"
+predicates = "3"
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
