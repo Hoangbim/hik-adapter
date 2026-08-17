@@ -96,7 +96,13 @@ impl VtmSession {
                 }
                 return Err(session_error(
                     ErrorCategory::VtmNegotiationFailed,
-                    "VTM negotiation was rejected",
+                    format!(
+                        "VTM negotiation was rejected (result={})",
+                        response
+                            .result
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "missing".to_owned())
+                    ),
                 ));
             }
             if redirect_key.is_none() {

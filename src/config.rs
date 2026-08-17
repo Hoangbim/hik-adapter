@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AdapterError, ErrorCategory};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AppConfig {
     pub hik_connect: HikConnectConfig,
@@ -125,16 +125,6 @@ impl AppConfig {
                 )
             })?;
         Ok(())
-    }
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            hik_connect: HikConnectConfig::default(),
-            recording: RecordingConfig::default(),
-            server: ServerConfig::default(),
-        }
     }
 }
 

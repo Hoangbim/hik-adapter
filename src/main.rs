@@ -50,7 +50,7 @@ async fn main() {
         .without_time()
         .init();
     if let Err(error) = execute(Cli::parse()).await {
-        eprintln!("error: {:?}", error.category);
+        eprintln!("error: {:?}: {}", error.category, error.message);
         std::process::exit(1);
     }
 }
@@ -89,13 +89,40 @@ async fn run(path: &Path, overwrite: bool) -> Result<(), AdapterError> {
         Duration::from_secs(config.hik_connect.request_timeout_seconds),
     )?;
     let session = api.login(&credentials)?;
+    tracing::debug!(
+        api_host = session.api_base_url.host_str().unwrap_or("unknown"),
+        "authenticated against regional Hik-Connect API"
+    );
+    let inventory = api.list_cameras(&session)?;
     let allowlist = &config.recording.camera_serials;
-    let cameras = api
-        .list_cameras(&session)?
-        .into_iter()
-        .filter(|camera| allowlist.is_empty() || allowlist.contains(&camera.serial))
-        .take(config.recording.max_cameras)
-        .collect::<Vec<_>>();
+    let cameras = if allowlist.is_empty() {
+        inventory
+            .into_iter()
+            .take(config.recording.max_cameras)
+            .collect::<Vec<_>>()
+    } else {
+        let mut selected = Vec::new();
+        for serial in allowlist {
+            let matches = inventory
+                .iter()
+                .filter(|camera| &camera.serial == serial)
+                .cloned()
+                .collect::<Vec<_>>();
+            if matches.is_empty() {
+                selected.push(hik_adapter::model::Camera {
+                    index: selected.len() + 1,
+                    name: serial.clone(),
+                    device_name: "direct VTM target".to_owned(),
+                    serial: serial.clone(),
+                    channel: 1,
+                });
+            } else {
+                selected.extend(matches);
+            }
+        }
+        selected.truncate(config.recording.max_cameras);
+        selected
+    };
     if cameras.is_empty() {
         return Err(AdapterError::new(
             ErrorCategory::ConfigurationInvalid,

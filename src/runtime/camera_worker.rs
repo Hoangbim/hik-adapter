@@ -64,7 +64,16 @@ pub fn spawn_camera_workers<J: CameraJob>(
                         AdapterError::new(ErrorCategory::ValidationFailed, "camera worker panicked")
                     })
                     .and_then(|result| result)
-                    .map_err(public_error);
+                    .map_err(|error| {
+                        tracing::warn!(
+                            camera = %key.serial,
+                            channel = key.channel,
+                            category = ?error.category,
+                            reason = %error.message,
+                            "camera worker failed"
+                        );
+                        public_error(error)
+                    });
                 match &result {
                     Ok(recording) => state.complete(&key, recording.clone()),
                     Err(error) => state.fail(&key, error.clone()),

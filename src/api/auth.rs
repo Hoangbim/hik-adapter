@@ -103,8 +103,22 @@ impl ApiClient {
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
             .map(|value| SecretString::from(value.to_owned()));
+        let api_base_url = payload
+            .pointer("/loginArea/apiDomain")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(|domain| {
+                if domain.starts_with("http://") || domain.starts_with("https://") {
+                    Url::parse(domain)
+                } else {
+                    Url::parse(&format!("https://{domain}"))
+                }
+            })
+            .transpose()
+            .map_err(|_| AdapterError::new(ErrorCategory::ApiFailed, "invalid login API domain"))?
+            .unwrap_or(base_url);
         Ok(AuthSession {
-            api_base_url: base_url,
+            api_base_url,
             session_id: SecretString::from(session_id.to_owned()),
             refresh_session_id,
             feature_code: self.feature_code.clone(),

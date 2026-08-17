@@ -84,6 +84,28 @@ fn login_follows_one_regional_redirect() {
 }
 
 #[test]
+fn login_uses_successful_response_area_domain() {
+    let initial = MockServer::start();
+    let regional = MockServer::start();
+    initial.mock(|when, then| {
+        when.method(POST).path("/v3/users/login/v2");
+        then.status(200).json_body(json!({
+            "meta": {"code": 200},
+            "loginSession": {"sessionId": "session"},
+            "loginArea": {"apiDomain": regional.url("")}
+        }));
+    });
+    let session = ApiClient::new(initial.url(""), Duration::from_secs(2))
+        .unwrap()
+        .login(&credentials("user", "password"))
+        .unwrap();
+    assert_eq!(
+        session.api_base_url.host_str(),
+        regional.url("").parse::<url::Url>().unwrap().host_str()
+    );
+}
+
+#[test]
 fn login_maps_captcha() {
     let server = MockServer::start();
     server.mock(|when, then| {
@@ -189,7 +211,7 @@ fn vtm_selects_exact_channel_and_primary_token() {
             .path("/api/user/token/get")
             .body_contains("count=5");
         then.status(200)
-            .json_body(json!({"tokens": ["", "primary-token"]}));
+            .json_body(json!({"tokenArray": ["", "primary-token"]}));
     });
     let client = ApiClient::new(server.url(""), Duration::from_secs(2)).unwrap();
     let session = client.login(&credentials("user", "password")).unwrap();
@@ -249,7 +271,7 @@ fn vtm_falls_back_to_auth_service_token() {
     api.mock(|when, then| {
         when.method(GET).path("/v3/configurations/system/info");
         then.status(200).json_body(json!({
-            "meta": {"code": 200}, "serviceUrls": {"authAddr": auth.url("")}
+            "meta": {"code": 200}, "systemConfigInfo": {"authAddr": auth.url("")}
         }));
     });
     let fallback = auth.mock(|when, then| {

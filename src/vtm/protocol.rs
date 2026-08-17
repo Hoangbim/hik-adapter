@@ -32,27 +32,19 @@ impl TryFrom<u8> for Channel {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum MessageCode {
-    KeepAliveReq = 0x0132,
-    KeepAliveRsp = 0x0133,
-    StreamInfoReq = 0x013b,
-    StreamInfoRsp = 0x013c,
-    StreamInfoNotify = 0x013d,
-}
+pub struct MessageCode(u16);
 
-impl TryFrom<u16> for MessageCode {
-    type Error = AdapterError;
+#[allow(non_upper_case_globals)]
+impl MessageCode {
+    pub const KeepAliveReq: Self = Self(0x0132);
+    pub const KeepAliveRsp: Self = Self(0x0133);
+    pub const StreamInfoReq: Self = Self(0x013b);
+    pub const StreamInfoRsp: Self = Self(0x013c);
+    pub const StreamInfoNotify: Self = Self(0x013d);
+    pub const VtmStreamEcdhNotify: Self = Self(0x014a);
 
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            0x0132 => Ok(Self::KeepAliveReq),
-            0x0133 => Ok(Self::KeepAliveRsp),
-            0x013b => Ok(Self::StreamInfoReq),
-            0x013c => Ok(Self::StreamInfoRsp),
-            0x013d => Ok(Self::StreamInfoNotify),
-            _ => Err(protocol_error("unknown VTM message code")),
-        }
+    pub const fn raw(self) -> u16 {
+        self.0
     }
 }
 
@@ -103,7 +95,7 @@ impl VtmPacket {
         bytes.push(self.header.channel as u8);
         bytes.extend_from_slice(&body_len.to_be_bytes());
         bytes.extend_from_slice(&self.header.sequence.to_be_bytes());
-        bytes.extend_from_slice(&(self.header.code as u16).to_be_bytes());
+        bytes.extend_from_slice(&self.header.code.raw().to_be_bytes());
         bytes.extend_from_slice(&self.body);
         Ok(bytes)
     }
@@ -131,7 +123,7 @@ pub fn decode_header(bytes: [u8; VTM_HEADER_SIZE]) -> Result<VtmHeader, AdapterE
         channel: Channel::try_from(bytes[1])?,
         body_len: u16::from_be_bytes([bytes[2], bytes[3]]),
         sequence: u16::from_be_bytes([bytes[4], bytes[5]]),
-        code: MessageCode::try_from(u16::from_be_bytes([bytes[6], bytes[7]]))?,
+        code: MessageCode(u16::from_be_bytes([bytes[6], bytes[7]])),
     })
 }
 

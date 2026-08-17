@@ -3,6 +3,5 @@
   "loginSession": {
     "sessionId": "header.eyJzIjoic2lnbi12YWx1ZSJ9.signature",
     "rfSessionId": "refresh-value"
-  },
-  "loginArea": {"apiDomain": "api.example.invalid"}
+  }
 }

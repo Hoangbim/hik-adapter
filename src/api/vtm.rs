@@ -138,6 +138,7 @@ impl ApiClient {
         let auth_addr = [
             "/authAddr",
             "/systemInfo/authAddr",
+            "/systemConfigInfo/authAddr",
             "/serviceUrls/authAddr",
             "/data/authAddr",
             "/data/serviceUrls/authAddr",
@@ -145,31 +146,39 @@ impl ApiClient {
         .iter()
         .find_map(|pointer| system.pointer(pointer).and_then(Value::as_str))
         .map(str::trim)
-        .filter(|value| !value.is_empty() && !matches!(*value, "null" | "none"))
+        .and_then(parse_auth_addr)
+        .or_else(|| derive_auth_addr(&session.api_base_url))
         .ok_or_else(|| vtm_error(ErrorCategory::VtmTokenFailed, "missing authAddr"))?;
-        let mut auth_base =
-            if auth_addr.starts_with("http://") || auth_addr.starts_with("https://") {
-                Url::parse(auth_addr)
-            } else {
-                Url::parse(&format!("https://{auth_addr}"))
-            }
-            .map_err(|_| vtm_error(ErrorCategory::VtmTokenFailed, "invalid authAddr"))?;
+        let mut auth_base = auth_addr;
         if !auth_base.path().ends_with('/') {
             auth_base.set_path(&format!("{}/", auth_base.path()));
         }
         let sign = session_sign(session.session_id.expose_secret())?;
+        tracing::debug!(
+            auth_host = auth_base.host_str().unwrap_or("unknown"),
+            "requesting fallback VTDU token"
+        );
         let response = self
             .http
             .get(Self::endpoint(&auth_base, "/vtdutoken2")?)
+            .headers(self.headers(Some(session))?)
             .query(&[
                 ("ssid", session.session_id.expose_secret()),
                 ("sign", sign.as_str()),
             ])
             .send()
-            .map_err(|_| {
+            .map_err(|error| {
                 vtm_error(
                     ErrorCategory::VtmTokenFailed,
-                    "fallback token request failed",
+                    format!(
+                        "fallback token request failed (connect={}, timeout={}, status={})",
+                        error.is_connect(),
+                        error.is_timeout(),
+                        error
+                            .status()
+                            .map(|status| status.as_u16().to_string())
+                            .unwrap_or_else(|| "none".to_owned())
+                    ),
                 )
             })?;
         if !response.status().is_success() {
@@ -252,7 +261,9 @@ pub fn build_vtm_url(
 fn first_token(payload: &Value) -> Option<&str> {
     payload
         .pointer("/tokens")
+        .or_else(|| payload.pointer("/tokenArray"))
         .or_else(|| payload.pointer("/data/tokens"))
+        .or_else(|| payload.pointer("/data/tokenArray"))
         .and_then(Value::as_array)?
         .iter()
         .filter_map(Value::as_str)
@@ -300,6 +311,30 @@ fn value_as_u16(value: Option<&Value>) -> Option<u16> {
         })
 }
 
+fn parse_auth_addr(value: &str) -> Option<Url> {
+    if value.is_empty() || matches!(value.to_ascii_lowercase().as_str(), "null" | "none") {
+        return None;
+    }
+    let url = if value.starts_with("http://") || value.starts_with("https://") {
+        Url::parse(value).ok()?
+    } else {
+        Url::parse(&format!("https://{value}")).ok()?
+    };
+    match url.host_str()?.to_ascii_lowercase().as_str() {
+        "" | "null" | "none" => None,
+        _ => Some(url),
+    }
+}
+
+fn derive_auth_addr(api_base: &Url) -> Option<Url> {
+    let host = api_base.host_str()?;
+    let region = host.strip_prefix("apii")?.strip_suffix(".ezvizlife.com")?;
+    if region.is_empty() {
+        return None;
+    }
+    Url::parse(&format!("https://{region}auth.ezvizlife.com")).ok()
+}
+
 fn required_str<'a>(
     value: &'a Value,
     key: &str,
@@ -314,4 +349,19 @@ fn required_str<'a>(
 
 fn vtm_error(category: ErrorCategory, message: impl Into<String>) -> AdapterError {
     AdapterError::new(category, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derives_regional_auth_when_system_info_returns_null() {
+        let api = Url::parse("https://apiieu.ezvizlife.com").unwrap();
+        assert_eq!(
+            derive_auth_addr(&api).unwrap().as_str(),
+            "https://euauth.ezvizlife.com/"
+        );
+        assert!(parse_auth_addr("https://null").is_none());
+    }
 }

@@ -30,6 +30,18 @@ fn rejects_unknown_channel_and_bad_body_length() {
 }
 
 #[test]
+fn accepts_live_ecdh_control_notification() {
+    let header = decode_header([0x24, 0, 0, 0, 0, 1, 0x01, 0x4a]).unwrap();
+    assert_eq!(header.code, MessageCode::VtmStreamEcdhNotify);
+}
+
+#[test]
+fn preserves_unknown_message_codes_for_ignored_packets() {
+    let header = decode_header([0x24, 0, 0, 0, 0, 1, 0x02, 0x01]).unwrap();
+    assert_eq!(header.code.raw(), 0x0201);
+}
+
+#[test]
 fn parses_stream_info_response_fields_and_redacts_secrets() {
     let body = [
         0x08, 0x00, 0x22, 0x03, b's', b's', b'n', 0x2a, 0x03, b'k', b'e', b'y', 0x3a, 0x03, b'u',
