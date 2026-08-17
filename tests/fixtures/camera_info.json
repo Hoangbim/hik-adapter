@@ -1,0 +1,7 @@
+{
+  "meta": {"code": 200},
+  "cameraInfos": [
+    {"channelNo": 2, "cameraName": "Channel 2"},
+    {"channelNo": 1, "cameraName": "Channel 1"}
+  ]
+}

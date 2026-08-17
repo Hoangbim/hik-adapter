@@ -1,7 +1,6 @@
 use std::{
     fmt,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
 };
 
 use secrecy::SecretString;
@@ -174,6 +173,8 @@ impl Default for ServerConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, OnceLock};
+
     use secrecy::ExposeSecret;
 
     use super::*;

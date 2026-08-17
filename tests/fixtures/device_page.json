@@ -1,0 +1,8 @@
+{
+  "meta": {"code": 200},
+  "deviceInfos": [
+    {"deviceSerial": "SERIAL-A", "name": "Device A"},
+    {"deviceSerial": "SERIAL-B", "name": "Device B"}
+  ],
+  "page": {"hasNext": false}
+}
