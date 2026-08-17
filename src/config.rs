@@ -20,6 +20,7 @@ pub struct AppConfig {
 #[serde(default)]
 pub struct HikConnectConfig {
     pub api_base_url: String,
+    pub web_base_url: String,
     pub username_env: String,
     pub password_env: String,
     pub request_timeout_seconds: u64,
@@ -28,7 +29,6 @@ pub struct HikConnectConfig {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct RecordingConfig {
-    pub max_cameras: usize,
     pub duration_seconds: u64,
     pub output_dir: PathBuf,
     pub ffmpeg_path: PathBuf,
@@ -97,12 +97,6 @@ impl AppConfig {
     }
 
     pub fn validate(&self) -> Result<(), AdapterError> {
-        if !(1..=41).contains(&self.recording.max_cameras) {
-            return Err(AdapterError::new(
-                ErrorCategory::ConfigurationInvalid,
-                "max_cameras must be 1..=41",
-            ));
-        }
         if self.recording.duration_seconds == 0 {
             return Err(AdapterError::new(
                 ErrorCategory::ConfigurationInvalid,
@@ -132,6 +126,7 @@ impl Default for HikConnectConfig {
     fn default() -> Self {
         Self {
             api_base_url: "https://api.hik-connect.com".into(),
+            web_base_url: "https://www.hik-connect.com".into(),
             username_env: "HIKCONNECT_USERNAME".into(),
             password_env: "HIKCONNECT_PASSWORD".into(),
             request_timeout_seconds: 20,
@@ -142,7 +137,6 @@ impl Default for HikConnectConfig {
 impl Default for RecordingConfig {
     fn default() -> Self {
         Self {
-            max_cameras: 41,
             duration_seconds: 30,
             output_dir: PathBuf::from("recordings"),
             ffmpeg_path: PathBuf::from("ffmpeg"),
@@ -170,14 +164,6 @@ mod tests {
     use super::*;
 
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-    #[test]
-    fn rejects_more_than_forty_one_cameras() {
-        let mut config = AppConfig::default();
-        config.recording.max_cameras = 42;
-        let error = config.validate().unwrap_err();
-        assert_eq!(error.category, ErrorCategory::ConfigurationInvalid);
-    }
 
     #[test]
     fn credentials_come_from_named_environment_variables() {

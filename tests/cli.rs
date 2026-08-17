@@ -26,7 +26,7 @@ fn missing_config_is_nonzero_and_sanitized() {
 fn missing_credentials_are_nonzero_and_sanitized() {
     let directory = tempfile::tempdir().unwrap();
     let config = directory.path().join("config.yaml");
-    std::fs::write(&config, "recording:\n  max_cameras: 10\n").unwrap();
+    std::fs::write(&config, "recording:\n  duration_seconds: 30\n").unwrap();
     Command::cargo_bin("hik-adapter")
         .unwrap()
         .args(["list", "--config", config.to_str().unwrap()])

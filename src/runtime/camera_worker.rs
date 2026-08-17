@@ -34,12 +34,6 @@ pub fn spawn_camera_workers<J: CameraJob>(
     job: J,
     shutdown: Arc<AtomicBool>,
 ) -> Result<Vec<JoinHandle<WorkerResult>>, AdapterError> {
-    if cameras.len() > 41 {
-        return Err(AdapterError::new(
-            ErrorCategory::ConfigurationInvalid,
-            "at most 41 camera workers are allowed",
-        ));
-    }
     state.register(&cameras);
     let job = Arc::new(job);
     let mut handles = Vec::with_capacity(cameras.len());
@@ -256,15 +250,14 @@ mod tests {
     }
 
     #[test]
-    fn refuses_more_than_forty_one_workers() {
-        assert!(
-            spawn_camera_workers(
-                cameras(42),
-                AdapterState::default(),
-                FakeJob,
-                Arc::new(AtomicBool::new(false)),
-            )
-            .is_err()
-        );
+    fn supports_more_than_forty_one_workers() {
+        let handles = spawn_camera_workers(
+            cameras(42),
+            AdapterState::default(),
+            FakeJob,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        assert_eq!(join_workers(handles).len(), 42);
     }
 }

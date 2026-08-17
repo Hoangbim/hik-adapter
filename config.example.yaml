@@ -1,11 +1,11 @@
 hik_connect:
   api_base_url: "https://api.hik-connect.com"
+  web_base_url: "https://www.hik-connect.com"
   username_env: "HIKCONNECT_USERNAME"
   password_env: "HIKCONNECT_PASSWORD"
   request_timeout_seconds: 20
 
 recording:
-  max_cameras: 41
   duration_seconds: 30
   output_dir: "recordings"
   ffmpeg_path: "ffmpeg"

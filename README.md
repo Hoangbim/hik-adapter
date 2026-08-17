@@ -1,8 +1,9 @@
 # hik-adapter
 
 Rust feasibility adapter for Hik-Connect VTM relay streams. It logs in with a
-recipient account, lists camera channels, records up to ten cameras on distinct
-OS threads, validates MP4 output, and serves completed files over HTTP Range.
+recipient account as both mobile and web clients, merges owned and shared
+camera inventories, records selected cameras on distinct OS threads, validates
+MP4 output, and serves completed files over HTTP Range.
 
 ## Prerequisites
 
@@ -37,6 +38,9 @@ VLC and other HEVC-capable clients can use the same Range endpoint.
 
 Each selected camera gets one named OS thread. A camera failure does not stop
 the other recordings, so partial success is expected during feasibility runs.
+An empty `recording.camera_serials` scans every camera returned by the merged
+inventory; set serials only when a targeted run is needed. There is no fixed
+camera-count limit.
 Completed files are mode `0600` inside a mode `0700` output directory. Remove
 the `recordings/` directory when the feasibility evidence is no longer needed;
 use `run --overwrite` only when intentionally replacing prior outputs.

@@ -61,6 +61,45 @@ fn login_hashes_password_and_redacts_session() {
 }
 
 #[test]
+fn web_client_logs_in_as_type_forty_eight_and_lists_shared_serials() {
+    let server = MockServer::start();
+    let login = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v3/users/login/v2")
+            .header("clienttype", "48");
+        then.status(200).json_body(fixture("login_success"));
+    });
+    let shares = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v3/hcweb/share/domains")
+            .header("clienttype", "48")
+            .body_contains("limit=1000")
+            .body_contains("offset=0");
+        then.status(200).json_body(json!({
+            "meta": {"code": 200},
+            "data": {
+                "success": true,
+                "resultCode": "0",
+                "data": [
+                    {"subSerial": "SERIAL-SHARED", "shareId": "1", "status": 1},
+                    {"subSerial": "SERIAL-SHARED", "shareId": "2", "status": 1},
+                    {"subSerial": "", "shareId": "3", "status": 1}
+                ]
+            }
+        }));
+    });
+    let client =
+        ApiClient::new_with_client_type(server.url(""), Duration::from_secs(2), "48").unwrap();
+    let session = client.login(&credentials("user", "password")).unwrap();
+    let serials = client
+        .list_shared_serials(&session, &server.url(""))
+        .unwrap();
+    login.assert();
+    shares.assert();
+    assert_eq!(serials, vec!["SERIAL-SHARED"]);
+}
+
+#[test]
 fn login_follows_one_regional_redirect() {
     let initial = MockServer::start();
     let regional = MockServer::start();
@@ -158,6 +197,64 @@ fn inventory_orders_channels_and_indexes_cameras() {
     assert_eq!(
         cameras.iter().map(|c| c.index).collect::<Vec<_>>(),
         vec![1, 2, 3]
+    );
+}
+
+#[test]
+fn inventory_merges_shared_serials_and_deduplicates_channels() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/v3/userdevices/v1/devices/pagelist");
+        then.status(200).json_body(json!({
+            "meta": {"code": 200},
+            "deviceInfos": [{"deviceSerial": "SERIAL-A", "name": "Owned"}],
+            "page": {"hasNext": false}
+        }));
+    });
+    server.mock(|when, then| {
+        when.method(GET)
+            .path("/v3/userdevices/v1/cameras/info")
+            .query_param("deviceSerial", "SERIAL-A");
+        then.status(200).json_body(json!({
+            "meta": {"code": 200},
+            "cameraInfos": [{"channelNo": 1, "cameraName": "Owned camera"}]
+        }));
+    });
+    let shared = server.mock(|when, then| {
+        when.method(GET)
+            .path("/v3/userdevices/v1/cameras/info")
+            .query_param("deviceSerial", "SERIAL-SHARED");
+        then.status(200).json_body(json!({
+            "meta": {"code": 200},
+            "cameraInfos": [
+                {"channelNo": 2, "cameraName": "Shared two"},
+                {"channelNo": 1, "cameraName": "Shared one"}
+            ]
+        }));
+    });
+    let client = ApiClient::new(server.url(""), Duration::from_secs(2)).unwrap();
+    server.mock(|when, then| {
+        when.method(POST).path("/v3/users/login/v2");
+        then.status(200).json_body(fixture("login_success"));
+    });
+    let session = client.login(&credentials("user", "password")).unwrap();
+    let cameras = client
+        .list_cameras_with_shared(
+            &session,
+            &["SERIAL-A".to_owned(), "SERIAL-SHARED".to_owned()],
+        )
+        .unwrap();
+    shared.assert();
+    assert_eq!(
+        cameras
+            .iter()
+            .map(|camera| (camera.serial.as_str(), camera.channel, camera.index))
+            .collect::<Vec<_>>(),
+        vec![
+            ("SERIAL-A", 1, 1),
+            ("SERIAL-SHARED", 1, 2),
+            ("SERIAL-SHARED", 2, 3),
+        ]
     );
 }
 

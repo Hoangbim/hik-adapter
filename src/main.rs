@@ -10,9 +10,10 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use hik_adapter::{
-    api::ApiClient,
+    api::{ApiClient, AuthSession, WEB_CLIENT_TYPE},
     config::{AppConfig, Credentials},
     error::{AdapterError, ErrorCategory},
+    model::Camera,
     recording::recording_name,
     runtime::{AdapterState, VtmCameraJob, join_workers, spawn_camera_workers},
     server::{ServerState, router},
@@ -65,12 +66,7 @@ async fn execute(cli: Cli) -> Result<(), AdapterError> {
 fn list(path: &Path) -> Result<(), AdapterError> {
     let config = AppConfig::load(path)?;
     let credentials = Credentials::from_config(&config.hik_connect)?;
-    let client = ApiClient::new(
-        &config.hik_connect.api_base_url,
-        Duration::from_secs(config.hik_connect.request_timeout_seconds),
-    )?;
-    let session = client.login(&credentials)?;
-    let cameras = client.list_cameras(&session)?;
+    let (_, _, cameras) = authenticated_inventory(&config, &credentials)?;
     println!("INDEX\tCAMERA\tDEVICE\tSERIAL\tCHANNEL");
     for camera in cameras {
         println!(
@@ -84,22 +80,10 @@ fn list(path: &Path) -> Result<(), AdapterError> {
 async fn run(path: &Path, overwrite: bool) -> Result<(), AdapterError> {
     let config = AppConfig::load(path)?;
     let credentials = Credentials::from_config(&config.hik_connect)?;
-    let api = ApiClient::new(
-        &config.hik_connect.api_base_url,
-        Duration::from_secs(config.hik_connect.request_timeout_seconds),
-    )?;
-    let session = api.login(&credentials)?;
-    tracing::debug!(
-        api_host = session.api_base_url.host_str().unwrap_or("unknown"),
-        "authenticated against regional Hik-Connect API"
-    );
-    let inventory = api.list_cameras(&session)?;
+    let (api, session, inventory) = authenticated_inventory(&config, &credentials)?;
     let allowlist = &config.recording.camera_serials;
-    let cameras = if allowlist.is_empty() {
+    let mut cameras = if allowlist.is_empty() {
         inventory
-            .into_iter()
-            .take(config.recording.max_cameras)
-            .collect::<Vec<_>>()
     } else {
         let mut selected = Vec::new();
         for serial in allowlist {
@@ -120,9 +104,11 @@ async fn run(path: &Path, overwrite: bool) -> Result<(), AdapterError> {
                 selected.extend(matches);
             }
         }
-        selected.truncate(config.recording.max_cameras);
         selected
     };
+    for (index, camera) in cameras.iter_mut().enumerate() {
+        camera.index = index + 1;
+    }
     if cameras.is_empty() {
         return Err(AdapterError::new(
             ErrorCategory::ConfigurationInvalid,
@@ -192,6 +178,31 @@ async fn run(path: &Path, overwrite: bool) -> Result<(), AdapterError> {
     }
     let _ = server.await;
     Ok(())
+}
+
+fn authenticated_inventory(
+    config: &AppConfig,
+    credentials: &Credentials,
+) -> Result<(ApiClient, AuthSession, Vec<Camera>), AdapterError> {
+    let timeout = Duration::from_secs(config.hik_connect.request_timeout_seconds);
+    let api = ApiClient::new(&config.hik_connect.api_base_url, timeout)?;
+    let session = api.login(credentials)?;
+    let web_api = ApiClient::new_with_client_type(
+        &config.hik_connect.api_base_url,
+        timeout,
+        WEB_CLIENT_TYPE,
+    )?;
+    let web_session = web_api.login(credentials)?;
+    let shared_serials =
+        web_api.list_shared_serials(&web_session, &config.hik_connect.web_base_url)?;
+    let cameras = api.list_cameras_with_shared(&session, &shared_serials)?;
+    tracing::info!(
+        api_host = session.api_base_url.host_str().unwrap_or("unknown"),
+        shared_devices = shared_serials.len(),
+        camera_channels = cameras.len(),
+        "loaded full Hik-Connect inventory"
+    );
+    Ok((api, session, cameras))
 }
 
 fn prepare_output(

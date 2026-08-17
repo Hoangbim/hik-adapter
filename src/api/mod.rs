@@ -17,13 +17,15 @@ use url::Url;
 
 use crate::error::{AdapterError, ErrorCategory};
 
-pub const CLIENT_TYPE: &str = "55";
+pub const MOBILE_CLIENT_TYPE: &str = "55";
+pub const WEB_CLIENT_TYPE: &str = "48";
 pub const CLIENT_VERSION: &str = "6.0.0.20250101";
 
 pub struct ApiClient {
     pub(crate) http: Client,
     pub(crate) base_url: Url,
     pub(crate) feature_code: String,
+    client_type: String,
     timeout: Duration,
 }
 
@@ -51,6 +53,14 @@ impl fmt::Debug for AuthSession {
 
 impl ApiClient {
     pub fn new(base_url: impl AsRef<str>, timeout: Duration) -> Result<Self, AdapterError> {
+        Self::new_with_client_type(base_url, timeout, MOBILE_CLIENT_TYPE)
+    }
+
+    pub fn new_with_client_type(
+        base_url: impl AsRef<str>,
+        timeout: Duration,
+        client_type: impl Into<String>,
+    ) -> Result<Self, AdapterError> {
         let base_url = Url::parse(base_url.as_ref()).map_err(|_| {
             AdapterError::new(
                 ErrorCategory::ConfigurationInvalid,
@@ -74,12 +84,17 @@ impl ApiClient {
             http,
             base_url,
             feature_code,
+            client_type: client_type.into(),
             timeout,
         })
     }
 
     pub fn clone_for_worker(&self) -> Result<Self, AdapterError> {
-        let mut worker = Self::new(self.base_url.as_str(), self.timeout)?;
+        let mut worker = Self::new_with_client_type(
+            self.base_url.as_str(),
+            self.timeout,
+            self.client_type.clone(),
+        )?;
         worker.feature_code.clone_from(&self.feature_code);
         Ok(worker)
     }
@@ -87,7 +102,7 @@ impl ApiClient {
     pub(crate) fn headers(&self, session: Option<&AuthSession>) -> Result<HeaderMap, AdapterError> {
         let mut headers = HeaderMap::new();
         for (name, value) in [
-            ("clienttype", CLIENT_TYPE),
+            ("clienttype", self.client_type.as_str()),
             ("clientversion", CLIENT_VERSION),
             ("featurecode", self.feature_code.as_str()),
             ("lang", "en-US"),
