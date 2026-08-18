@@ -13,12 +13,13 @@ use url::Url;
 use crate::{
     api::VtmContext,
     error::{AdapterError, ErrorCategory},
+    model::StreamClass,
 };
 
 use super::{
     Channel, MediaPipe, MediaTransport, MessageCode, StreamInfoResponse, VTM_HEADER_SIZE,
-    VtmPacket, build_keepalive_request, build_stream_info_request, classify, decode_header,
-    hex_prefix, parse_stream_info_response,
+    VtmPacket, build_keepalive_request, build_stream_info_request, classify, classify_stream,
+    decode_header, hex_prefix, parse_stream_info_response,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -57,6 +58,28 @@ impl VtmSession {
         })?;
         self.capture = Some(file);
         Ok(())
+    }
+
+    /// Sniff stream packets until the transport can be classified or the
+    /// deadline passes. Used by the probe layer; nothing is recorded.
+    pub fn probe_transport(&mut self, timeout: Duration) -> Result<StreamClass, AdapterError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if Instant::now() >= deadline {
+                return Ok(StreamClass::Unknown);
+            }
+            let packet = match self.read_packet() {
+                Ok(packet) => packet,
+                Err(error) if error.category == ErrorCategory::NoMedia => continue,
+                Err(error) => return Err(error),
+            };
+            if packet.header.channel != Channel::Stream {
+                continue;
+            }
+            if let Some(class) = classify_stream(&packet.body) {
+                return Ok(class);
+            }
+        }
     }
 
     pub fn start(&mut self, max_redirects: usize) -> Result<StreamInfoResponse, AdapterError> {

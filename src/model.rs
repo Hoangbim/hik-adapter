@@ -38,6 +38,30 @@ pub enum CameraStatus {
     Failed,
 }
 
+/// Stream classification produced by the probe layer and by media transport
+/// detection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamClass {
+    ClearH265,
+    H264,
+    MpegPs,
+    Encrypted,
+    Unknown,
+}
+
+impl StreamClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ClearH265 => "clear_h265",
+            Self::H264 => "h264",
+            Self::MpegPs => "mpeg_ps",
+            Self::Encrypted => "encrypted",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct RecordingInfo {
     pub file_name: String,

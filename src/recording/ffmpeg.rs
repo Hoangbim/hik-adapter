@@ -140,6 +140,7 @@ pub fn ffmpeg_args(output: &Path, transport: MediaTransport) -> Vec<String> {
     let demuxer = match transport {
         MediaTransport::MpegPs => "mpeg",
         MediaTransport::RtpH265 => "hevc",
+        MediaTransport::RtpH264 => "h264",
     };
     [
         "-hide_banner",
@@ -238,6 +239,12 @@ mod tests {
     fn ffmpeg_command_selects_raw_hevc_demuxer_for_rtp_h265() {
         let args = ffmpeg_args(Path::new("SERIAL-1.part.mp4"), MediaTransport::RtpH265);
         assert!(args.windows(2).any(|pair| pair[0] == "-f" && pair[1] == "hevc"));
+    }
+
+    #[test]
+    fn ffmpeg_command_selects_raw_h264_demuxer_for_rtp_h264() {
+        let args = ffmpeg_args(Path::new("SERIAL-1.part.mp4"), MediaTransport::RtpH264);
+        assert!(args.windows(2).any(|pair| pair[0] == "-f" && pair[1] == "h264"));
     }
 
     #[test]

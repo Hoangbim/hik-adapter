@@ -13,9 +13,12 @@ use hik_adapter::{
     api::{ApiClient, AuthSession, WEB_CLIENT_TYPE},
     config::{AppConfig, Credentials},
     error::{AdapterError, ErrorCategory},
-    model::Camera,
+    model::{Camera, PublicError, StreamClass},
     recording::recording_name,
-    runtime::{AdapterState, VtmCameraJob, join_workers, spawn_camera_workers},
+    runtime::{
+        AdapterState, StreamProbeJob, VtmCameraJob, join_probe_handles, join_workers,
+        spawn_camera_workers, spawn_stream_probes,
+    },
     server::{ServerState, router},
 };
 
@@ -155,6 +158,30 @@ async fn run(path: &Path, overwrite: bool) -> Result<(), AdapterError> {
             signal_shutdown.store(true, Ordering::Relaxed);
         }
     });
+    if config.recording.stream_probe {
+        probe_streams(&api, &session, &config, &state, &cameras)?;
+    }
+    let mut recording_cameras = Vec::with_capacity(cameras.len());
+    for camera in cameras.clone() {
+        let encrypted = state.stream_class(&camera.key()) == Some(StreamClass::Encrypted)
+            || state.device_encrypted(&camera.key()) == Some(true);
+        if encrypted {
+            tracing::warn!(
+                camera = %camera.serial,
+                channel = camera.channel,
+                "skipping encrypted stream",
+            );
+            state.fail(
+                &camera.key(),
+                PublicError {
+                    category: ErrorCategory::EncryptedStream,
+                    message: "encrypted VTM stream is unsupported".to_owned(),
+                },
+            );
+        } else {
+            recording_cameras.push(camera);
+        }
+    }
     let job = VtmCameraJob {
         api,
         session,
@@ -163,7 +190,7 @@ async fn run(path: &Path, overwrite: bool) -> Result<(), AdapterError> {
         socket_timeout: Duration::from_secs(config.hik_connect.request_timeout_seconds),
         no_media_timeout: Duration::from_secs(10),
     };
-    let handles = spawn_camera_workers(cameras, state, job, Arc::clone(&shutdown))?;
+    let handles = spawn_camera_workers(recording_cameras, state, job, Arc::clone(&shutdown))?;
     let results = tokio::task::spawn_blocking(move || join_workers(handles))
         .await
         .map_err(|_| AdapterError::new(ErrorCategory::ValidationFailed, "worker join failed"))?;
@@ -177,6 +204,50 @@ async fn run(path: &Path, overwrite: bool) -> Result<(), AdapterError> {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     let _ = server.await;
+    Ok(())
+}
+
+fn probe_streams(
+    api: &ApiClient,
+    session: &AuthSession,
+    config: &AppConfig,
+    state: &AdapterState,
+    cameras: &[Camera],
+) -> Result<(), AdapterError> {
+    let flags = api.device_encrypt_flags(session).unwrap_or_else(|error| {
+        tracing::warn!(reason = %error.message, "device encrypt flag scan failed");
+        std::collections::HashMap::new()
+    });
+    let mut encrypted = 0_usize;
+    for camera in cameras {
+        if let Some(info) = flags.get(&camera.serial) {
+            state.set_device_encrypted(&camera.key(), info.is_encrypt);
+            if info.is_encrypt {
+                encrypted += 1;
+            }
+        }
+    }
+    tracing::info!(
+        devices = flags.len(),
+        encrypted_devices = encrypted,
+        "device encrypt flags loaded",
+    );
+    let job = Arc::new(StreamProbeJob {
+        api: api.clone_for_worker()?,
+        session: session.clone(),
+        socket_timeout: Duration::from_secs(config.hik_connect.request_timeout_seconds),
+        probe_timeout: Duration::from_secs(6),
+    });
+    let handles = spawn_stream_probes(cameras.to_vec(), job)?;
+    let outcomes = join_probe_handles(handles);
+    let mut counts = std::collections::BTreeMap::new();
+    for outcome in &outcomes {
+        *counts
+            .entry(outcome.stream_class.as_str())
+            .or_insert(0_usize) += 1;
+        state.set_stream_class(&outcome.camera, outcome.stream_class);
+    }
+    tracing::info!(counts = ?counts, "stream probe summary");
     Ok(())
 }
 

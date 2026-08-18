@@ -36,6 +36,7 @@ pub struct RecordingConfig {
     pub camera_serials: Vec<String>,
     pub stream_dump_packets: usize,
     pub stream_capture: bool,
+    pub stream_probe: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -146,6 +147,7 @@ impl Default for RecordingConfig {
             camera_serials: Vec::new(),
             stream_dump_packets: 0,
             stream_capture: false,
+            stream_probe: true,
         }
     }
 }

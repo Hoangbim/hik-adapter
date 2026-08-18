@@ -1,7 +1,7 @@
 use hik_adapter::vtm::{
-    Channel, H265Assembler, MediaPipe, MediaTransport, MessageCode, RtpFields, TransportLock,
-    VtmPacket, build_stream_info_request, classify, decode_header, hex_prefix,
-    parse_stream_info_response,
+    Channel, H264Assembler, H265Assembler, MediaPipe, MediaTransport, MessageCode, RtpFields,
+    StreamClass, TransportLock, VtmPacket, build_stream_info_request, classify,
+    classify_stream, decode_header, hex_prefix, parse_stream_info_response,
 };
 use secrecy::{ExposeSecret, SecretString};
 
@@ -227,4 +227,79 @@ fn media_pipe_locks_mpeg_ps_before_rtp() {
         pipe.accept(&ps_rtp).unwrap(),
         Some((MediaTransport::MpegPs, vec![0, 0, 1, 0xba, 0x44]))
     );
+}
+
+#[test]
+fn h264_complete_nal_passes_through() {
+    let mut assembler = H264Assembler::default();
+    assert_eq!(assembler.accept(&[0x67, 0x42, 0x00, 0x1e]), Some(vec![0x67, 0x42, 0x00, 0x1e]));
+}
+
+#[test]
+fn h264_fu_a_fragments_reassemble_with_reconstructed_header() {
+    let mut assembler = H264Assembler::default();
+    assert_eq!(assembler.accept(&[0x7c, 0x85, 0xde, 0xad]), None); // S, IDR (5)
+    assert_eq!(assembler.accept(&[0x7c, 0x05, 0xbe, 0xef]), None); // M
+    assert_eq!(
+        assembler.accept(&[0x7c, 0x45, 0xca, 0xfe]), // E
+        Some(vec![0x65, 0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe])
+    );
+}
+
+#[test]
+fn h264_orphan_fragments_are_dropped() {
+    let mut assembler = H264Assembler::default();
+    assert_eq!(assembler.accept(&[0x7c, 0x05, 0xbe, 0xef]), None);
+    assert_eq!(assembler.accept(&[0x7c, 0x45, 0xca, 0xfe]), None);
+}
+
+#[test]
+fn media_pipe_locks_rtp_h264() {
+    let mut pipe = MediaPipe::default();
+    let sps = rtp_body(96, &[0x67, 0x42, 0x00, 0x1e]);
+    assert_eq!(
+        pipe.accept(&sps).unwrap(),
+        Some((MediaTransport::RtpH264, vec![0, 0, 0, 1, 0x67, 0x42, 0x00, 0x1e]))
+    );
+    assert_eq!(pipe.transport(), Some(MediaTransport::RtpH264));
+    // FU-A fragment flow once locked.
+    assert_eq!(pipe.accept(&rtp_body(96, &[0x7c, 0x85, 0xde, 0xad])).unwrap(), None);
+    assert_eq!(
+        pipe.accept(&rtp_body(96, &[0x7c, 0x45, 0xca, 0xfe])).unwrap(),
+        Some((MediaTransport::RtpH264, vec![0, 0, 0, 1, 0x65, 0xde, 0xad, 0xca, 0xfe]))
+    );
+}
+
+#[test]
+fn media_pipe_rejects_encrypted_container() {
+    let mut pipe = MediaPipe::default();
+    let mut payload = vec![
+        0x40, 0x00, 0x00, 0x02, 0x80, 0x06, 0x00, 0x01, 0x11, 0x21, 0x02, 0x01,
+    ];
+    payload.extend_from_slice(&[0x62, 0x01, 0x93, 0xde, 0xad]);
+    let error = pipe.accept(&rtp_body(96, &payload)).unwrap_err();
+    assert_eq!(error.category, hik_adapter::error::ErrorCategory::EncryptedStream);
+}
+
+#[test]
+fn classify_stream_identifies_transports() {
+    let mut payload = vec![
+        0x40, 0x00, 0x00, 0x02, 0x80, 0x06, 0x00, 0x01, 0x11, 0x21, 0x02, 0x01, 0x62, 0x01,
+    ];
+    assert_eq!(
+        classify_stream(&rtp_body(96, &payload)),
+        Some(StreamClass::Encrypted)
+    );
+    payload.clear();
+    assert_eq!(
+        classify_stream(&rtp_body(96, &[0x67, 0x42, 0x00, 0x1e])),
+        Some(StreamClass::H264)
+    );
+    assert_eq!(
+        classify_stream(&rtp_body(96, &[0x40, 0x01, 0x0c, 0x01])),
+        Some(StreamClass::ClearH265)
+    );
+    assert_eq!(classify_stream(&[9, 8, 0, 0, 1, 0xba, 1]), Some(StreamClass::MpegPs));
+    assert_eq!(classify_stream(&rtp_body(112, &[0x48, 0x4b])), None);
+    assert_eq!(classify_stream(b"garbage"), None);
 }

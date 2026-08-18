@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::{
     error::{AdapterError, ErrorCategory},
-    model::{Camera, CameraKey, CameraStatus, PublicError, RecordingInfo},
+    model::{Camera, CameraKey, CameraStatus, PublicError, RecordingInfo, StreamClass},
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -16,6 +16,8 @@ pub struct CameraRuntimeState {
     pub status: CameraStatus,
     pub recording: Option<RecordingInfo>,
     pub error: Option<PublicError>,
+    pub stream_class: Option<StreamClass>,
+    pub device_encrypted: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -42,6 +44,8 @@ impl AdapterState {
                     status: CameraStatus::Pending,
                     recording: None,
                     error: None,
+                    stream_class: None,
+                    device_encrypted: None,
                 });
         }
     }
@@ -101,6 +105,44 @@ impl AdapterState {
                 .count(),
             cameras,
         }
+    }
+
+    pub fn set_stream_class(&self, key: &CameraKey, class: StreamClass) {
+        if let Some(entry) = self
+            .entries
+            .write()
+            .expect("adapter state poisoned")
+            .get_mut(key)
+        {
+            entry.stream_class = Some(class);
+        }
+    }
+
+    pub fn set_device_encrypted(&self, key: &CameraKey, encrypted: bool) {
+        if let Some(entry) = self
+            .entries
+            .write()
+            .expect("adapter state poisoned")
+            .get_mut(key)
+        {
+            entry.device_encrypted = Some(encrypted);
+        }
+    }
+
+    pub fn stream_class(&self, key: &CameraKey) -> Option<StreamClass> {
+        self.entries
+            .read()
+            .expect("adapter state poisoned")
+            .get(key)
+            .and_then(|entry| entry.stream_class)
+    }
+
+    pub fn device_encrypted(&self, key: &CameraKey) -> Option<bool> {
+        self.entries
+            .read()
+            .expect("adapter state poisoned")
+            .get(key)
+            .and_then(|entry| entry.device_encrypted)
     }
 
     pub fn recording(&self, file_name: &str) -> Option<RecordingInfo> {

@@ -119,8 +119,8 @@ fn parse_probe(bytes: &[u8]) -> Result<ValidatedProbe, AdapterError> {
         .into_iter()
         .find(|stream| stream.codec_type == "video")
         .ok_or_else(|| validation_error("recording has no video stream"))?;
-    if stream.codec_name != "hevc" {
-        return Err(validation_error("recording video is not HEVC"));
+    if !matches!(stream.codec_name.as_str(), "hevc" | "h264") {
+        return Err(validation_error("recording video is not HEVC/H.264"));
     }
     let width = stream
         .width
@@ -170,8 +170,14 @@ mod tests {
     }
 
     #[test]
+    fn accepts_h264_probe() {
+        let h264 = br#"{"format":{"duration":"30","size":"10"},"streams":[{"codec_name":"h264","codec_type":"video","width":640,"height":480,"r_frame_rate":"20/1"}]}"#;
+        assert_eq!(parse_probe(h264).unwrap().codec, "h264");
+    }
+
+    #[test]
     fn rejects_wrong_codec_and_duration() {
-        let wrong_codec = br#"{"format":{"duration":"30","size":"10"},"streams":[{"codec_name":"h264","codec_type":"video","width":1280,"height":720,"r_frame_rate":"20/1"}]}"#;
+        let wrong_codec = br#"{"format":{"duration":"30","size":"10"},"streams":[{"codec_name":"mjpeg","codec_type":"video","width":1280,"height":720,"r_frame_rate":"20/1"}]}"#;
         assert!(parse_probe(wrong_codec).is_err());
         let short = br#"{"format":{"duration":"2","size":"10"},"streams":[{"codec_name":"hevc","codec_type":"video","width":1280,"height":720,"r_frame_rate":"20/1"}]}"#;
         assert!(parse_probe(short).is_err());

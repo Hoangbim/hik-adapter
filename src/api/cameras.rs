@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use url::Url;
@@ -14,7 +14,84 @@ const DEVICE_FILTER: &str =
     "TIME_PLAN,CONNECTION,SWITCH,STATUS,STATUS_EXT,WIFI,NODISTURB,P2P,KMS,HIDDNS";
 const SHARE_PAGE_LIMIT: usize = 1_000;
 
+/// Per-device stream encryption information from the device pagelist.
+#[derive(Clone, Debug)]
+pub struct DeviceEncryptInfo {
+    pub is_encrypt: bool,
+    pub encrypt_pwd: Option<String>,
+    pub kms_secret_key: Option<String>,
+}
+
 impl ApiClient {
+    /// Walk the device pagelist and collect per-device stream encryption
+    /// flags (`statusInfos.isEncrypt`) plus the key material the API exposes
+    /// for encrypted streams. Covers devices bound to this account only;
+    /// shared devices never appear in the pagelist and must be classified by
+    /// sniffing the media stream instead.
+    pub fn device_encrypt_flags(
+        &self,
+        session: &AuthSession,
+    ) -> Result<HashMap<String, DeviceEncryptInfo>, AdapterError> {
+        let mut flags = HashMap::new();
+        let mut offset = 0_usize;
+        let limit = 50_usize;
+        loop {
+            let payload = self.get_json(
+                session,
+                "/v3/userdevices/v1/devices/pagelist",
+                &[
+                    ("groupId", "-1".into()),
+                    ("limit", limit.to_string()),
+                    ("offset", offset.to_string()),
+                    ("filter", DEVICE_FILTER.into()),
+                ],
+            )?;
+            Self::require_meta_success(&payload)?;
+            let serials = payload
+                .get("deviceInfos")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|device| device.get("deviceSerial").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            for serial in serials {
+                let status = payload
+                    .pointer(&format!("/statusInfos/{serial}"))
+                    .and_then(Value::as_object);
+                let kms = payload
+                    .pointer(&format!("/kmsInfos/{serial}"))
+                    .and_then(Value::as_object);
+                flags.insert(
+                    serial,
+                    DeviceEncryptInfo {
+                        is_encrypt: status
+                            .and_then(|value| value.get("isEncrypt"))
+                            .and_then(Value::as_u64)
+                            == Some(1),
+                        encrypt_pwd: status
+                            .and_then(|value| value.get("encryptPwd"))
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                        kms_secret_key: kms
+                            .and_then(|value| value.get("secretKey"))
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                    },
+                );
+            }
+            let has_next = payload
+                .pointer("/page/hasNext")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if !has_next {
+                break;
+            }
+            offset += limit;
+        }
+        Ok(flags)
+    }
+
     pub fn list_cameras(&self, session: &AuthSession) -> Result<Vec<Camera>, AdapterError> {
         let mut cameras = Vec::new();
         let mut offset = 0_usize;
