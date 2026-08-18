@@ -11,6 +11,7 @@ use crate::{
     config::RecordingConfig,
     error::{AdapterError, ErrorCategory},
     model::Camera,
+    vtm::MediaTransport,
 };
 
 pub struct FfmpegRecorder {
@@ -21,7 +22,11 @@ pub struct FfmpegRecorder {
 }
 
 impl FfmpegRecorder {
-    pub fn start(config: &RecordingConfig, camera: &Camera) -> Result<Self, AdapterError> {
+    pub fn start(
+        config: &RecordingConfig,
+        camera: &Camera,
+        transport: MediaTransport,
+    ) -> Result<Self, AdapterError> {
         fs::create_dir_all(&config.output_dir)
             .map_err(|_| ffmpeg_error("cannot create output directory"))?;
         let final_path = config
@@ -35,7 +40,7 @@ impl FfmpegRecorder {
             ));
         }
         let mut child = Command::new(&config.ffmpeg_path)
-            .args(ffmpeg_args(&part_path))
+            .args(ffmpeg_args(&part_path, transport))
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -77,9 +82,9 @@ impl FfmpegRecorder {
         let stderr = self.take_stderr();
         let detail = sanitized_stderr(&stderr);
         Err(ffmpeg_error(if detail.is_empty() {
-            "FFmpeg rejected MPEG-PS input".to_owned()
+            "FFmpeg rejected media input".to_owned()
         } else {
-            format!("FFmpeg rejected MPEG-PS input: {detail}")
+            format!("FFmpeg rejected media input: {detail}")
         }))
     }
 
@@ -131,14 +136,18 @@ impl Drop for FfmpegRecorder {
     }
 }
 
-pub fn ffmpeg_args(output: &Path) -> Vec<String> {
+pub fn ffmpeg_args(output: &Path, transport: MediaTransport) -> Vec<String> {
+    let demuxer = match transport {
+        MediaTransport::MpegPs => "mpeg",
+        MediaTransport::RtpH265 => "hevc",
+    };
     [
         "-hide_banner",
         "-loglevel",
         "error",
         "-y",
         "-f",
-        "mpeg",
+        demuxer,
         "-i",
         "pipe:0",
         "-map",
@@ -203,7 +212,7 @@ mod tests {
     #[test]
     fn ffmpeg_command_preserves_video_and_drops_audio() {
         assert_eq!(
-            ffmpeg_args(Path::new("SERIAL-1.part.mp4")),
+            ffmpeg_args(Path::new("SERIAL-1.part.mp4"), MediaTransport::MpegPs),
             [
                 "-hide_banner",
                 "-loglevel",
@@ -223,6 +232,12 @@ mod tests {
                 "SERIAL-1.part.mp4",
             ]
         );
+    }
+
+    #[test]
+    fn ffmpeg_command_selects_raw_hevc_demuxer_for_rtp_h265() {
+        let args = ffmpeg_args(Path::new("SERIAL-1.part.mp4"), MediaTransport::RtpH265);
+        assert!(args.windows(2).any(|pair| pair[0] == "-f" && pair[1] == "hevc"));
     }
 
     #[test]

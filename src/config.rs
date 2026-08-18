@@ -34,6 +34,8 @@ pub struct RecordingConfig {
     pub ffmpeg_path: PathBuf,
     pub ffprobe_path: PathBuf,
     pub camera_serials: Vec<String>,
+    pub stream_dump_packets: usize,
+    pub stream_capture: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -142,6 +144,8 @@ impl Default for RecordingConfig {
             ffmpeg_path: PathBuf::from("ffmpeg"),
             ffprobe_path: PathBuf::from("ffprobe"),
             camera_serials: Vec::new(),
+            stream_dump_packets: 0,
+            stream_capture: false,
         }
     }
 }

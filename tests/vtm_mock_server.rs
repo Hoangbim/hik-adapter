@@ -92,8 +92,9 @@ fn negotiates_and_streams_mpeg_ps_without_buffering() {
         .for_each_media(
             Duration::from_millis(100),
             Duration::from_millis(500),
+            0,
             &shutdown,
-            move |body| {
+            move |_, body| {
                 target.lock().unwrap().extend_from_slice(body);
                 Ok(())
             },
@@ -130,8 +131,9 @@ fn rejects_encrypted_media_without_exposing_body() {
         .for_each_media(
             Duration::from_millis(20),
             Duration::from_millis(500),
+            0,
             &AtomicBool::new(false),
-            |_| Ok(()),
+            |_, _| Ok(()),
         )
         .unwrap_err();
     assert_eq!(error.category, ErrorCategory::EncryptedStream);
@@ -160,8 +162,9 @@ fn maps_negotiated_but_idle_session_to_no_media() {
         .for_each_media(
             Duration::from_millis(20),
             Duration::from_millis(80),
+            0,
             &AtomicBool::new(false),
-            |_| Ok(()),
+            |_, _| Ok(()),
         )
         .unwrap_err();
     assert_eq!(error.category, ErrorCategory::NoMedia);

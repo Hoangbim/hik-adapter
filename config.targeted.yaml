@@ -1,0 +1,21 @@
+hik_connect:
+  api_base_url: "https://api.hik-connect.com"
+  web_base_url: "https://www.hik-connect.com"
+  username_env: "HIKCONNECT_USERNAME"
+  password_env: "HIKCONNECT_PASSWORD"
+  request_timeout_seconds: 20
+
+recording:
+  duration_seconds: 35
+  output_dir: "recordings/targeted-GF4563623-FQ9073314"
+  ffmpeg_path: "ffmpeg"
+  ffprobe_path: "ffprobe"
+  camera_serials:
+    - "GF4563623"
+    - "FQ9073314"
+  stream_dump_packets: 0
+  stream_capture: false
+
+server:
+  bind: "127.0.0.1:8788"
+  public_base_url: null

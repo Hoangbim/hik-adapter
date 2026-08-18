@@ -11,6 +11,7 @@ recording:
   ffmpeg_path: "ffmpeg"
   ffprobe_path: "ffprobe"
   camera_serials: []
+  stream_dump_packets: 0
 
 server:
   bind: "0.0.0.0:8787"

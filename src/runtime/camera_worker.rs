@@ -118,14 +118,33 @@ impl CameraJob for VtmCameraJob {
         self.state.transition(&key, CameraStatus::Connecting)?;
         let mut vtm = VtmSession::connect(context, self.socket_timeout)?;
         vtm.start(3)?;
-        let mut recorder = FfmpegRecorder::start(&self.config, &camera)?;
+        if self.config.stream_capture {
+            let capture_dir = self.config.output_dir.join("capture");
+            std::fs::create_dir_all(&capture_dir).map_err(|_| {
+                AdapterError::new(ErrorCategory::ConfigurationInvalid, "cannot create capture dir")
+            })?;
+            vtm.set_capture(&capture_dir.join(format!(
+                "{}-{}.bin",
+                &camera.serial, camera.channel
+            )))?;
+        }
         self.state.transition(&key, CameraStatus::Recording)?;
+        let mut recorder: Option<FfmpegRecorder> = None;
         vtm.for_each_media(
             Duration::from_secs(self.config.duration_seconds),
             self.no_media_timeout,
+            self.config.stream_dump_packets,
             &shutdown,
-            |body| recorder.write_media(body),
+            |transport, media| {
+                if recorder.is_none() {
+                    recorder = Some(FfmpegRecorder::start(&self.config, &camera, transport)?);
+                }
+                recorder.as_mut().expect("recorder initialized").write_media(media)
+            },
         )?;
+        let recorder = recorder.ok_or_else(|| {
+            AdapterError::new(ErrorCategory::NoMedia, "no media captured")
+        })?;
         let part_path = recorder.finish(Duration::from_secs(15))?;
         self.state.transition(&key, CameraStatus::Validating)?;
         validate_recording(

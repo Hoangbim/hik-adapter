@@ -1,6 +1,8 @@
 use std::{
+    fs::File,
     io::{ErrorKind, Read, Write},
     net::{TcpStream, ToSocketAddrs},
+    path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -14,8 +16,9 @@ use crate::{
 };
 
 use super::{
-    Channel, MessageCode, StreamInfoResponse, TransportLock, VTM_HEADER_SIZE, VtmPacket,
-    build_keepalive_request, build_stream_info_request, decode_header, parse_stream_info_response,
+    Channel, MediaPipe, MediaTransport, MessageCode, StreamInfoResponse, VTM_HEADER_SIZE,
+    VtmPacket, build_keepalive_request, build_stream_info_request, classify, decode_header,
+    hex_prefix, parse_stream_info_response,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -31,6 +34,7 @@ pub struct VtmSession {
     timeout: Duration,
     sequence: u16,
     stream_session: Option<String>,
+    capture: Option<File>,
 }
 
 impl VtmSession {
@@ -42,7 +46,17 @@ impl VtmSession {
             timeout,
             sequence: 0,
             stream_session: None,
+            capture: None,
         })
+    }
+
+    /// Record every raw stream-packet body to a file for offline analysis.
+    pub fn set_capture(&mut self, path: &Path) -> Result<(), AdapterError> {
+        let file = File::create(path).map_err(|_| {
+            session_error(ErrorCategory::VtmNegotiationFailed, "cannot create capture file")
+        })?;
+        self.capture = Some(file);
+        Ok(())
     }
 
     pub fn start(&mut self, max_redirects: usize) -> Result<StreamInfoResponse, AdapterError> {
@@ -118,17 +132,18 @@ impl VtmSession {
         &mut self,
         media_duration: Duration,
         no_media_timeout: Duration,
+        dump_stream_packets: usize,
         shutdown: &AtomicBool,
         mut sink: F,
     ) -> Result<MediaStats, AdapterError>
     where
-        F: FnMut(&[u8]) -> Result<(), AdapterError>,
+        F: FnMut(MediaTransport, &[u8]) -> Result<(), AdapterError>,
     {
         let waiting_since = Instant::now();
         let mut media_since: Option<Instant> = None;
         let mut last_keepalive = Instant::now();
         let mut stats = MediaStats::default();
-        let mut transport = TransportLock::default();
+        let mut pipe = MediaPipe::default();
         let mut unsynchronized_packets = 0_u64;
         let mut unsynchronized_bytes = 0_u64;
         loop {
@@ -177,13 +192,38 @@ impl VtmSession {
                     ));
                 }
                 Channel::Stream => {
-                    let Some(media) = transport.accept(&packet.body)? else {
+                    if let Some(file) = self.capture.as_mut() {
+                        // Length-framed raw body: [u32 LE len][body].
+                        let len: u32 = packet.body.len().try_into().unwrap_or(u32::MAX);
+                        let _ = file.write_all(&len.to_le_bytes());
+                        let _ = file.write_all(&packet.body);
+                    }
+                    let Some((transport, media)) = pipe.accept(&packet.body)? else {
                         unsynchronized_packets += 1;
                         unsynchronized_bytes += packet.body.len() as u64;
+                        if dump_stream_packets > 0 && unsynchronized_packets <= dump_stream_packets as u64 {
+                            tracing::warn!(
+                                camera = %self.context.camera.serial,
+                                channel = self.context.camera.channel,
+                                unsynchronized_packet = unsynchronized_packets,
+                                body_len = packet.body.len(),
+                                hex = %hex_prefix(&packet.body, 96),
+                                guess = ?classify(&packet.body),
+                                "stream packet without MPEG-PS pack header",
+                            );
+                        }
                         continue;
                     };
                     let started = media_since.get_or_insert_with(Instant::now);
-                    sink(media)?;
+                    if stats.packets == 0 {
+                        tracing::info!(
+                            camera = %self.context.camera.serial,
+                            channel = self.context.camera.channel,
+                            transport = ?transport,
+                            "locked media transport",
+                        );
+                    }
+                    sink(transport, &media)?;
                     stats.packets += 1;
                     stats.bytes += media.len() as u64;
                     stats.elapsed = started.elapsed();
